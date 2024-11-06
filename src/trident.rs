@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 
-use std::fmt;
+use std::{fmt, mem};
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
+use log::info;
 use crate::config::{Config, UserConfig};
 
 #[derive(Debug, Default)]
@@ -30,12 +31,6 @@ impl State {
 
 pub struct VersionInfo {
     pub name: &'static str,
-    // pub branch: &'static str,
-    // pub commit_id: &'static str,
-    // pub rev_count: &'static str,
-    // pub compiler: &'static str,
-    // pub compile_time: &'static str,
-    // pub revision: &'static str,
 }
 
 impl fmt::Display for VersionInfo {
@@ -71,27 +66,27 @@ impl Trident {
         config_path: P,
         version_info: &'static VersionInfo,
         agent_mode: RunningMode,
-        sidecar_mode: bool,
-        cgroups_disabled: bool,
     ) {
         let config = Config {
             controller_ips: vec![],
-            controller_port: 0,
             controller_tls_port: 0,
-            controller_cert_file_prefix: "".to_string(),
-            log_file: "".to_string(),
-            kubernetes_cluster_id: "".to_string(),
-            kubernetes_cluster_name: None,
-            vtap_group_id_request: "".to_string(),
-            controller_domain_name: vec![],
-            override_os_hostname: None,
-            async_worker_thread_number: 0,
             team_id: "".to_string(),
-            cgroups_disabled,
-            new_rpc: false,
         };
         // #[cfg(target_os = "linux")]
         !config.pid_file.is_empty();
+    }
+
+
+    pub fn stop(&mut self) {
+        info!("Gracefully stopping");
+        let (state, cond) = &*self.state;
+
+        let mut state_guard = state.lock().unwrap();
+        *state_guard = State::Terminated;
+        cond.notify_one();
+        mem::drop(state_guard);
+        self.handle.take().unwrap().join().unwrap();
+        info!("Gracefully stopped");
     }
 }
 
